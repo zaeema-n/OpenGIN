@@ -8,77 +8,9 @@
 
 ## High-Level Architecture Diagram
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        CLIENT LAYER                             │
-│                   (Web/Mobile/Desktop Clients)                  │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ HTTP/REST + JSON
-                           │
-┌──────────────────────────┴─────────────────────────────────────┐
-│                        API LAYER                               │
-│  ┌─────────────────────┐        ┌──────────────────────┐       │
-│  │   Ingestion API     │        │    Read API          │       │
-│  │   (Ballerina)       │        │    (Ballerina)       │       │
-│  │   Port: 8080        │        │    Port: 8081        │       │
-│  │   - CREATE          │        │    - READ/QUERY      │       │
-│  │   - UPDATE          │        │    - FILTER          │       │
-│  │   - DELETE          │        │    - SEARCH          │       │
-│  └─────────┬───────────┘        └──────────┬───────────┘       │
-└────────────┼──────────────────────────────-┼───────────────────┘
-             │                               │
-             │        gRPC + Protobuf        │
-             │                               │
-┌────────────┴───────────────────────────────┴───────────────────┐
-│                    Core LAYER                                  │
-│                                                                │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │              Core API (Go)                               │  │
-│  │              Port: 50051 (gRPC)                          │  │
-│  │                                                          │  │
-│  │  Components:                                             │  │
-│  │  ┌────────────────┐  ┌─────────────────────────────┐     │  │
-│  │  │  gRPC Server   │  │  Engine                     │     │  │
-│  │  │  - CreateEntity│  │  - AttributeProcessor       │     │  │
-│  │  │  - ReadEntity  │  │  - GraphMetadataManager     │     │  │
-│  │  │  - UpdateEntity│  │  - TypeInference            │     │  │
-│  │  │  - DeleteEntity│  │  - StorageInference         │     │  │
-│  │  └────────────────┘  └─────────────────────────────┘     │  │
-│  │                                                          │  │
-│  │  ┌──────────────────────────────────────────────────┐    │  │
-│  │  │         Repository Layer                         │    │  │
-│  │  │  ┌────────────┐ ┌────────────┐ ┌─────────────┐   │    │  │
-│  │  │  │  MongoDB   │ │   Neo4j    │ │  PostgreSQL │   │    │  │
-│  │  │  │  Repo      │ │   Repo     │ │    Repo     │   │    │  │
-│  │  │  └────────────┘ └────────────┘ └─────────────┘   │    │  │
-│  │  └──────────────────────────────────────────────────┘    │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└────────┬─────────────────┬─────────────────────┬───────────────┘
-         │                 │                     │
-         │ Native Protocol │ Bolt Protocol       │ PostgreSQL Protocol
-         │                 │                     │
-┌────────┴─────────────────┴─────────────────────┴───────────────┐
-│                      DATABASE LAYER                            │
-│                                                                │
-│  ┌───────────────┐   ┌─────────────────┐   ┌────────────────┐  │
-│  │   MongoDB     │   │     Neo4j       │   │  PostgreSQL    │  │
-│  │  Port: 27017  │   │ Port: 7474/7687 │   │  Port: 5432    │  │
-│  │               │   │                 │   │                │  │
-│  │  Storage:     │   │  Storage:       │   │  Storage:      │  │
-│  │  - Metadata   │   │  - Entities     │   │  - Attributes  │  │
-│  │  - Key-Value  │   │  - Relationships│   │  - Schemas     │  │
-│  │    Pairs      │   │  - Graph Data   │   │  - Time-Series │  │
-│  └───────────────┘   └─────────────────┘   └────────────────┘  │
-└────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────────────────────────────────────────────────┐
-│                   SUPPORTING SERVICES                            │
-│  ┌──────────────┐  ┌────────────────┐  ┌──────────────────────┐  │
-│  │   Cleanup    │  │  Backup/Restore│  │    Swagger UI        │  │
-│  │   Service    │  │    Service     │  │    (API Docs)        │  │
-│  └──────────────┘  └────────────────┘  └──────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
-```
+![High-Level Architecture Diagram](../../assets/images/opengin-architecture-diagram.png)
+
 
 ---
 
@@ -86,7 +18,7 @@
 
 ### 1. API Layer (Client-Facing Services)
 
-#### Ingestion API (Ballerina, Port 8080)
+#### Ingestion API
 - **Purpose**: Handle entity mutations (CREATE, UPDATE, DELETE)
 - **Technology**: Ballerina REST service
 - **Location**: `opengin/ingestion-api/`
@@ -98,7 +30,7 @@
   - Convert Protobuf responses back to JSON
 - **Contract**: OpenAPI specification at `opengin/contracts/rest/ingestion_api.yaml`
 
-#### Read API (Ballerina, Port 8081)
+#### Read API
 - **Purpose**: Handle entity queries and retrieval
 - **Technology**: Ballerina REST service
 - **Location**: `opengin/read-api/`
@@ -110,14 +42,9 @@
   - Return formatted JSON responses
 - **Contract**: OpenAPI specification at `opengin/contracts/rest/read_api.yaml`
 
-#### Swagger UI
-- **Purpose**: Interactive API documentation
-- **Location**: `opengin/swagger-ui/`
-- **Serves**: OpenAPI specifications for Ingestion and Read APIs
-
 ### 2. Service Layer
 
-#### Core API (Go, gRPC, Port 50051)
+#### Core API
 Central orchestration service that manages data networking and all database interactions.
 
 **Location**: `opengin/core-api/`
@@ -632,123 +559,13 @@ Ingestion & Read APIs (wait for Core API to be healthy)
 
 ---
 
-## Design Decisions
-
-### Why Multiple Databases?
-
-**MongoDB for Metadata:**
-- Schema-less structure for flexible metadata
-- Fast key-value lookups
-- Easy to add new metadata fields
-
-**Neo4j for Entities & Relationships:**
-- Native graph traversal
-- Efficient relationship queries
-- Cypher query language optimized for graphs
-
-**PostgreSQL for Attributes:**
-- ACID compliance for critical data
-- Complex time-based queries
-- Strong typing and constraints
-- Efficient indexing for time-series data
-
-### Why gRPC for Internal Communication?
-
-- **Performance**: Binary protocol is faster than JSON
-- **Type Safety**: Protobuf provides strong contracts
-- **Code Generation**: Client/server stubs auto-generated
-- **Streaming**: Support for streaming if needed in future
-
-### Why Ballerina for APIs?
-
-- **Cloud-Native**: Built for cloud and microservices
-- **Type Safety**: Strong typing with type inference
-- **OpenAPI Integration**: Native OpenAPI support
-- **Network-Aware**: Built-in support for REST, gRPC, etc.
-
----
-
-## Future Enhancements
-
-Based on TODOs found in the codebase:
-
-1. **Connection Pooling** - Optimize database connections
-2. **Caching Layer** - Redis for frequently accessed data
-3. **Query Optimization** - Indexed queries and batch operations
-4. **Error Recovery** - Rollback mechanisms and retry logic
-5. **Transaction Support** - Distributed transactions across databases
-6. **GraphQL API** - Alternative query interface
-7. **Event Streaming** - Kafka integration for event-driven architecture
-8. **Observability** - Distributed tracing and metrics
-9. **Advanced Querying** - Join, Aggregation, filters across the polyglot database
-
----
-
 ## Related Documentation
 
-- [How It Works](../how_it_works.md) - Detailed data flow documentation
-- [Data Types](../datatype.md) - Type inference system details
-- [Storage Types](../storage.md) - Storage type inference details
-- [Backup Integration](../deployment/BACKUP_INTEGRATION.md) - Backup and restore guide
+- [How It Works](data_flow.md) - Detailed data flow documentation
+- [Data Types](../../reference/datatype.md) - Type inference system details
+- [Storage Types](../../reference/storage.md) - Storage type inference details
+- [Backup Integration](../../reference/operations/backup_integration.md) - Backup and restore guide
 - [Core API](../architecture/core-api.md) - Core API documentation
-- [Ingestion API](../../opengin/ingestion-api/README.md) - Ingestion API documentation
-- [Read API](../../opengin/read-api/README.md) - Read API documentation
+- [Service APIs](./api-layer-details.md) - Service APIs documentation
 
 ---
-
-## Quick Reference
-
-### Service Endpoints
-
-```bash
-# Ingestion API
-POST   http://localhost:8080/entities          # Create entity
-GET    http://localhost:8080/entities/{id}     # Read entity
-PUT    http://localhost:8080/entities/{id}     # Update entity
-DELETE http://localhost:8080/entities/{id}     # Delete entity
-
-# Query API
-GET    http://localhost:8081/v1/entities/{id}/metadata       # Get metadata
-GET    http://localhost:8081/v1/entities/{id}/relationships  # Get relationships
-GET    http://localhost:8081/v1/entities/{id}/attributes     # Get attributes
-```
-
-### Database Connections
-
-```bash
-# MongoDB
-mongodb://admin:admin123@localhost:27017/opengin?authSource=admin
-
-# Neo4j
-bolt://neo4j:neo4j123@localhost:7687
-http://localhost:7474
-
-# PostgreSQL
-postgresql://postgres:postgres@localhost:5432/opengin
-```
-
-### Docker Commands
-
-```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop all services
-docker-compose down
-
-# Clean databases
-docker-compose --profile cleanup run --rm cleanup /app/cleanup.sh pre
-
-# Rebuild services
-docker-compose build
-```
-
----
-
-**Document Version**: 1.0  
-**Last Updated**: October 2024  
-**Maintained By**: OpenGIN Development Team
-

@@ -6,7 +6,7 @@ Welcome to the OpenGIN architecture documentation. This folder contains comprehe
 
 ## Documentation Structure
 
-### 1. [Overview](./overview.md) - **START HERE**
+### 1. [Overview](./index.md) - **START HERE**
 Complete system architecture overview including:
 - High-level architecture diagram
 - Layer-by-layer breakdown (API, Service, Database)
@@ -14,7 +14,7 @@ Complete system architecture overview including:
 - Data flow sequences
 - Type and storage inference systems
 - Technology stack
-- Key features and design decisions
+- Key features
 
 **Recommended for**: Everyone - developers, architects, stakeholders
 
@@ -29,14 +29,12 @@ In-depth documentation of the CRUD Service:
 - Engine layer (AttributeProcessor, TypeInference, StorageInference)
 - Configuration and environment variables
 - Testing strategies
-- Performance considerations
-- Error handling and logging
 
 **Recommended for**: Backend developers, service implementers
 
 ---
 
-### 3. [API Layer Details](./api-layer-details.md)
+### 3. [Service APIs](./api-layer-details.md)
 Complete API layer documentation:
 - Ingestion API (CREATE, UPDATE, DELETE operations)
 - Read API (READ operations)
@@ -46,7 +44,6 @@ Complete API layer documentation:
 - Swagger UI documentation
 - Query parameters and filtering
 - Temporal queries (activeAt)
-- Error handling
 - Best practices
 
 **Recommended for**: API consumers, frontend developers, integration engineers
@@ -71,21 +68,21 @@ Detailed database schema documentation:
 
 ### By Role
 
-**I'm a new developer** → Start with [Overview](./overview.md), then [Diagrams](./diagrams.md)
+**I'm a new developer** → Start with [Overview](./index.md), then [Diagrams](./diagrams.md)
 
-**I'm working on APIs** → Read [API Layer Details](./api-layer-details.md)
+**I'm working on APIs** → Read [Service APIs](./api-layer-details.md)
 
 **I'm working on backend** → Read [Core API](./core-api.md)
 
 **I'm working on databases** → Read [Database Schemas](./database-schemas.md)
 
-**I'm presenting the architecture** → Use [Diagrams](./diagrams.md) and [Overview](./overview.md)
+**I'm presenting the architecture** → Use [Diagrams](./diagrams.md) and [Overview](./index.md)
 
 ### By Task
 
-**Understanding data flow** → [Overview](./overview.md) + [Diagrams](./diagrams.md)
+**Understanding data flow** → [Overview](./index.md) + [Diagrams](./diagrams.md)
 
-**Adding new endpoint** → [API Layer Details](./api-layer-details.md)
+**Adding new endpoint** → [Service APIs](./api-layer-details.md)
 
 **Adding new entity type** → [Database Schemas](./database-schemas.md) + [Core API](./core-api.md)
 
@@ -93,7 +90,7 @@ Detailed database schema documentation:
 
 **Performance tuning** → [Core API](./core-api.md) + [Database Schemas](./database-schemas.md)
 
-**Understanding types** → [Overview](./overview.md) + [Core API](./core-api.md)
+**Understanding types** → [Overview](./index.md) + [Core API](./core-api.md)
 
 ---
 
@@ -237,7 +234,7 @@ Returns attribute value as it was on specific date.
 ## Development Workflow
 
 ### 1. Understanding the System
-- Read [Overview](./overview.md)
+- Read [Overview](./index.md)
 - Understand data flow
 
 ### 2. Setting Up Development Environment
@@ -252,7 +249,7 @@ Returns attribute value as it was on specific date.
 1. Update OpenAPI contract in `opengin/contracts/rest/`
 2. Regenerate service code
 3. Implement endpoint logic
-4. Update [API Layer Details](./api-layer-details.md)
+4. Update [Service APIs](./api-layer-details.md)
 
 **Adding Core API feature**:
 1. Implement in appropriate layer (server, engine, repository)
@@ -273,27 +270,6 @@ Returns attribute value as it was on specific date.
 - Update relevant architecture docs
 - Add examples to appropriate sections
 - Keep diagrams in sync with changes
-
----
-
-## Performance Considerations
-
-### API Layer
-- Use selective retrieval (`output` parameter)
-- Filter at the source (server-side filtering)
-- Use temporal queries to reduce data transfer
-
-### Core Layer
-- Connection pooling for all databases
-- Parallel operations where possible
-- Efficient Protobuf serialization
-
-### Database Layer
-- Proper indexing on all tables/collections
-- Cypher query optimization
-- PostgreSQL query planning
-
-See individual docs for detailed optimization strategies.
 
 ---
 
@@ -358,13 +334,10 @@ Update architecture docs when:
 ### In This Repository
 
 - [Main README](../../README.md) - Project overview and quick start
-- [How It Works](../how_it_works.md) - Detailed data flow
-- [Data Types](../datatype.md) - Type inference system
-- [Storage Types](../storage.md) - Storage inference system
-- [Deployment Guide](../deployment/BACKUP_INTEGRATION.md) - Backup and restore
-- [Core API README](../../opengin/core-api/README.md) - Polyglot Database Query Processing
-- [Ingestion API README](../../opengin/ingestion-api/README.md) - Ingestion API setup
-- [Read API README](../../opengin/read-api/README.md) - Read API setup
+- [How It Works](data_flow.md) - Detailed data flow
+- [Data Types](../../reference/datatype.md) - Type inference system
+- [Storage Types](../../reference/storage.md) - Storage inference system
+- [Deployment Guide](../../reference/operations/backup_integration.md) - Backup and restore
 
 ### External Resources
 
@@ -395,8 +368,3 @@ For questions about the architecture:
 - Consult the development team
 
 ---
-
-**Last Updated**: October 2024  
-**Documentation Status**: ✅ Complete and Current  
-**Maintained By**: OpenGIN Development Team
-
