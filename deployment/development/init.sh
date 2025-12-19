@@ -668,6 +668,7 @@ restore_from_github() {
         
         # Download the archive
         local archive_url="https://github.com/$github_repo/archive/refs/tags/$version.zip"
+        log "INFO" "Archive URL: $archive_url"
         local archive_file="$extract_dir/archive.zip"
         
         if wget -q "$archive_url" -O "$archive_file"; then
@@ -700,7 +701,7 @@ restore_from_github() {
     
     # Download and restore MongoDB
     log "INFO" "Processing MongoDB backup..."
-    local mongodb_file="$archive_dir/opengin/version/$version/$environment/mongodb/opengin.tar.gz"
+    local mongodb_file="$archive_dir/opengin/$environment/mongodb/opengin.tar.gz"
     if [ -f "$mongodb_file" ]; then
         if restore_mongodb "$mongodb_file"; then
             results="${results}mongodb:true,"
@@ -716,7 +717,7 @@ restore_from_github() {
     
     # Download and restore PostgreSQL
     log "INFO" "Processing PostgreSQL backup..."
-    local postgres_file="$archive_dir/opengin/version/$version/$environment/postgres/opengin.tar.gz"
+    local postgres_file="$archive_dir/opengin/$environment/postgres/opengin.tar.gz"
     if [ -f "$postgres_file" ]; then
         if restore_postgres "$postgres_file"; then
             results="${results}postgres:true,"
@@ -732,7 +733,7 @@ restore_from_github() {
     
     # Download and restore Neo4j
     log "INFO" "Processing Neo4j backup..."
-    local neo4j_file="$archive_dir/opengin/version/$version/$environment/neo4j/neo4j.dump"
+    local neo4j_file="$archive_dir/opengin/$environment/neo4j/neo4j.dump"
     if [ -f "$neo4j_file" ]; then
         if restore_neo4j "$neo4j_file"; then
             results="${results}neo4j:true,"
