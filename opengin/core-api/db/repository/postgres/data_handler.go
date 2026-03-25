@@ -397,15 +397,24 @@ func isTypeCompatible(existingType, newType typeinference.DataType) bool {
 
 // handleTabularData processes tabular data attributes
 func (repo *PostgresRepository) HandleTabularData(ctx context.Context, entityID, attrName string, value *pb.TimeBasedValue, schemaInfo *schema.SchemaInfo) error {
-	// Generate table name - UUID without hyphens (32 chars) + prefix (5 chars) = 37 chars total
-	unique_id := uuid.New().String()
-	unique_id = strings.ReplaceAll(unique_id, "-", "") // Remove hyphens for PostgreSQL compatibility
-	tableName := fmt.Sprintf("attr_%s", unique_id)
+	// Look up any existing table name for this (entityID, attrName) pair.
+	// If found, reuse it so new rows are appended to the existing table.
+	// Only generate a fresh UUID when no record exists yet.
+	var tableName string
+	err := repo.DB().QueryRowContext(ctx,
+		`SELECT table_name FROM entity_attributes WHERE entity_id = $1 AND attribute_name = $2`,
+		entityID, attrName).Scan(&tableName)
+	if err != nil {
+		// No existing record – generate a new unique table name.
+		unique_id := uuid.New().String()
+		unique_id = strings.ReplaceAll(unique_id, "-", "") // Remove hyphens for PostgreSQL compatibility
+		tableName = fmt.Sprintf("attr_%s", unique_id)
+	}
 
 	// Convert schema to columns
 	columns := schemaToColumns(schemaInfo)
 
-	// Check if table exists
+	// Check if the physical table exists in the database
 	exists, err := repo.TableExists(ctx, tableName)
 	if err != nil {
 		return fmt.Errorf("error checking table existence: %v", err)

@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	pb "lk/datafoundation/core-api/lk/datafoundation/core-api"
 	"lk/datafoundation/core-api/pkg/schema"
 	"lk/datafoundation/core-api/pkg/storageinference"
 	"lk/datafoundation/core-api/pkg/typeinference"
@@ -45,21 +47,24 @@ func setupTestDB(t *testing.T) *PostgresRepository {
 	t.Cleanup(func() {
 		if repo != nil && repo.DB() != nil {
 			// Clean up all test tables created during this test
-			_, err := repo.DB().Exec(`
-				-- Drop all test tables that start with test_
+			/* _, err := repo.DB().Exec(`
+				-- Drop all tables referenced by test entities
 				DO $$ 
 				DECLARE 
-					table_name TEXT;
+					table_name_var TEXT;
 				BEGIN 
-					FOR table_name IN 
+					FOR table_name_var IN 
+						SELECT table_name FROM entity_attributes WHERE entity_id LIKE 'test_%' OR entity_id = 'test_entity'
+						UNION
 						SELECT tablename FROM pg_tables 
 						WHERE schemaname = 'public' 
 						AND (tablename LIKE 'test_data_table_%' 
 							OR tablename LIKE 'attr_test_%'
-							OR tablename = 'test_data_table'
-							OR tablename = 'attr_test_entity_test_attribute')
+							OR tablename = 'test_data_table')
 					LOOP 
-						EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(table_name) || ' CASCADE';
+						IF table_name_var IS NOT NULL THEN
+							EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(table_name_var) || ' CASCADE';
+						END IF;
 					END LOOP;
 				END $$;
 				
@@ -67,11 +72,11 @@ func setupTestDB(t *testing.T) *PostgresRepository {
 				DELETE FROM entity_attributes WHERE entity_id LIKE 'test_%' OR entity_id = 'test_entity';
 				
 				-- Clean up test attribute_schemas entries  
-				DELETE FROM attribute_schemas WHERE table_name LIKE 'test_%' OR table_name = 'test_table';
+				DELETE FROM attribute_schemas WHERE table_name LIKE 'test_%' OR table_name LIKE 'attr_%' OR table_name = 'test_table';
 			`)
 			if err != nil {
 				t.Logf("Warning: Failed to clean up test data: %v", err)
-			}
+			} */
 
 			// Close the repository after cleanup
 			repo.Close()
@@ -648,4 +653,142 @@ func TestGetDataTabularFormat(t *testing.T) {
 	assert.Equal(t, expectedColumns, filteredActualColumns)
 	assert.Len(t, filteredRows, 1)
 	assert.Equal(t, expectedRows[0], filteredRows[0].([]interface{}))
+}
+
+// TestHandleTabularData_AppendToExistingTable is a regression test for the bug where calling
+// HandleTabularData with the same (entityID, attributeName) pair created a new table instead of
+// appending rows to the existing one.
+//
+// Before the fix, a new UUID was generated unconditionally on every call, so TableExists always
+// returned false and a fresh table was created each time. After the fix, the existing table_name
+// is looked up from entity_attributes first and reused.
+func TestHandleTabularData_AppendToExistingTable(t *testing.T) {
+	repo := setupTestDB(t)
+	ctx := context.Background()
+
+	// Use a unique (entityID, attrName) pair so parallel test runs don't interfere.
+	entityID := fmt.Sprintf("test_entity_%d", time.Now().UnixNano())
+	attrName := fmt.Sprintf("test_attr_%d", time.Now().UnixNano())
+
+	columns := []string{"name", "score"}
+
+	// -----------------------------------------------------------------
+	// Helper: build a *pb.TimeBasedValue wrapping the given rows.
+	// -----------------------------------------------------------------
+	makeTimeBasedValue := func(rows [][]interface{}) *pb.TimeBasedValue {
+		colValues := make([]*structpb.Value, len(columns))
+		for i, c := range columns {
+			colValues[i] = structpb.NewStringValue(c)
+		}
+		rowValues := make([]*structpb.Value, len(rows))
+		for i, row := range rows {
+			cells := make([]*structpb.Value, len(row))
+			for j, cell := range row {
+				switch v := cell.(type) {
+				case string:
+					cells[j] = structpb.NewStringValue(v)
+				case int:
+					cells[j] = structpb.NewNumberValue(float64(v))
+				default:
+					cells[j] = structpb.NewStringValue(fmt.Sprintf("%v", v))
+				}
+			}
+			rowValues[i] = structpb.NewListValue(&structpb.ListValue{Values: cells})
+		}
+		tabularStruct := &structpb.Struct{
+			Fields: map[string]*structpb.Value{
+				"columns": structpb.NewListValue(&structpb.ListValue{Values: colValues}),
+				"rows":    structpb.NewListValue(&structpb.ListValue{Values: rowValues}),
+			},
+		}
+		anyVal, err := anypb.New(tabularStruct)
+		if err != nil {
+			t.Fatalf("makeTimeBasedValue: anypb.New: %v", err)
+		}
+		return &pb.TimeBasedValue{
+			StartTime: time.Now().Format(time.RFC3339),
+			EndTime:   time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+			Value:     anyVal,
+		}
+	}
+
+	// -----------------------------------------------------------------
+	// Helper: build a SchemaInfo for the columns above.
+	// -----------------------------------------------------------------
+	schemaInfo := &schema.SchemaInfo{
+		StorageType: storageinference.TabularData,
+		Fields: map[string]*schema.SchemaInfo{
+			"name": {
+				StorageType: storageinference.ScalarData,
+				TypeInfo:    &typeinference.TypeInfo{Type: typeinference.StringType},
+			},
+			"score": {
+				StorageType: storageinference.ScalarData,
+				TypeInfo:    &typeinference.TypeInfo{Type: typeinference.IntType},
+			},
+		},
+	}
+
+	// -----------------------------------------------------------------
+	// First insert: 2 rows.
+	// -----------------------------------------------------------------
+	firstRows := [][]interface{}{
+		{"Alice", 90},
+		{"Bob", 85},
+	}
+	err := repo.HandleTabularData(ctx, entityID, attrName, makeTimeBasedValue(firstRows), schemaInfo)
+	assert.NoError(t, err, "first HandleTabularData call should succeed")
+
+	// Retrieve the table_name that was stored for this (entityID, attrName).
+	var firstTableName string
+	err = repo.DB().QueryRowContext(ctx,
+		`SELECT table_name FROM entity_attributes WHERE entity_id = $1 AND attribute_name = $2`,
+		entityID, attrName).Scan(&firstTableName)
+	assert.NoError(t, err, "should find entity_attribute record after first insert")
+	assert.NotEmpty(t, firstTableName)
+
+	// Confirm table exists and has exactly 2 rows.
+	var firstCount int
+	err = repo.DB().QueryRowContext(ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s", firstTableName)).Scan(&firstCount)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, firstCount, "table should have 2 rows after first insert")
+
+	// -----------------------------------------------------------------
+	// Second insert with THE SAME (entityID, attrName): 1 more row.
+	// This is where the bug manifested – it used to create a new table.
+	// -----------------------------------------------------------------
+	secondRows := [][]interface{}{
+		{"Charlie", 78},
+	}
+	err = repo.HandleTabularData(ctx, entityID, attrName, makeTimeBasedValue(secondRows), schemaInfo)
+	assert.NoError(t, err, "second HandleTabularData call (same attribute) should succeed")
+
+	// The table_name in entity_attributes must NOT have changed.
+	var secondTableName string
+	err = repo.DB().QueryRowContext(ctx,
+		`SELECT table_name FROM entity_attributes WHERE entity_id = $1 AND attribute_name = $2`,
+		entityID, attrName).Scan(&secondTableName)
+	assert.NoError(t, err)
+	assert.Equal(t, firstTableName, secondTableName,
+		"table_name must be the same after second insert – a new table must NOT be created")
+
+	// The original table should now have 3 rows (2 + 1), not still 2.
+	var finalCount int
+	err = repo.DB().QueryRowContext(ctx,
+		fmt.Sprintf("SELECT COUNT(*) FROM %s", firstTableName)).Scan(&finalCount)
+	assert.NoError(t, err)
+	assert.Equal(t, 3, finalCount,
+		"rows from both inserts must be appended to the same table")
+
+	// -----------------------------------------------------------------
+	// Sanity: only 1 entity_attribute record should exist for this pair.
+	// -----------------------------------------------------------------
+	var recordCount int
+	err = repo.DB().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM entity_attributes WHERE entity_id = $1 AND attribute_name = $2`,
+		entityID, attrName).Scan(&recordCount)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, recordCount,
+		"there must be exactly one entity_attribute record for a given (entity_id, attribute_name)")
 }
