@@ -863,10 +863,14 @@ func (r *Neo4jRepository) FilterEntities(ctx context.Context, kind *pb.Kind, fil
 		query = `MATCH (e:` + kind.Major + `) WHERE 1=1 ` // Use kind.Major as the label
 		params = map[string]interface{}{}
 
-		// Add MinorKind filter if provided
+		// Add MinorKind filter if provided.
+		// Exact value, or a subtype that continues after a '+' boundary.
+		// "country-level-2" matches "country-level-2+lk-electoral-district"
+		// and does not match "country-level-20".
 		if kind.Minor != "" {
-			query += `AND e.MinorKind = $minorKind `
+			query += `AND (e.MinorKind = $minorKind OR e.MinorKind STARTS WITH $minorKindPrefix) `
 			params["minorKind"] = kind.Minor
+			params["minorKindPrefix"] = kind.Minor + "+"
 		}
 
 		// Add optional filters
