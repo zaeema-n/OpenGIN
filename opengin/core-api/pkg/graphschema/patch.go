@@ -15,7 +15,8 @@ type Patch struct {
 	// BaseVersion is the schema version the patch was written against. Apply does not use it;
 	// the caller checks it against the latest stored version.
 	BaseVersion int `json:"baseVersion"`
-	// Description, when set, replaces the schema's description.
+	// Description, when non-empty, replaces the schema's description. An empty value leaves the
+	// description unchanged; to clear it, replace the whole schema (PUT) instead.
 	Description string         `json:"description,omitempty"`
 	Add         PatchAdditions `json:"add"`
 	Remove      PatchRemovals  `json:"remove"`
